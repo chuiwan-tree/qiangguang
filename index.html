@@ -29,7 +29,7 @@ button{font-size:15px;padding:6px 12px;border:1px solid #bbb;border-radius:6px;b
 两棵树抢十二年的太阳。轮到你时，点自己的一格，再点它旁边亮起来的空格（上、左上、右上、左、右）长一格。每年两人各长一格，谁先手每年轮换。<br>
 年底结账：每格往太阳那边看，一路没东西挡得 2 份光，挡一格得 1 份，挡两格以上没有。太阳只提前一年告诉你从哪边来。<br>
 贴地的格子是根，每颗根撑 2 行高，长过了，最高那一枝从超出的地方整枝倒掉（虚线是各自能长到的高度）。<br>
-一枝连同它上面的整枝连着两年一份光没有，就枯掉。暗过一年的格子套红圈。
+一枝连同它上面的整枝连着两年一份光没有，就枯掉。暗过一年的格子套红圈，刚长的那一格套蓝色虚线圈。
 </div>
 <script>
 const W=9,H=9,YEARS=12,FALL=2;
@@ -87,8 +87,8 @@ function targets(k){const [x,y]=xy(k),out=[];
 function grow(from,to,G){G=G||g;const w=(G.turn%2+G.year)%2;G.cells[to]={who:w,parent:from,dark:0};G.turn++;
   const notes=[];if(G.turn%2===0)endYear(G,notes);return notes}
 function clone(G){return JSON.parse(JSON.stringify(G))}
-function play(from,to){hist.push(clone(g));const y0=g.year;const notes=grow(from,to);
-  msg=notes.length?`第 ${y0} 年底：`+notes.join('，'):'';sel=null;draw();
+function play(from,to){hist.push(clone(g));const y0=g.year;const who0=whose();const notes=grow(from,to);g.last=to;
+  msg=(ai&&who0===1?`电脑长在 (${to})。`:'')+(notes.length?`第 ${y0} 年底：`+notes.join('，'):'');sel=null;draw();
   if(ai&&g.year<YEARS&&whose()===1)setTimeout(aiMove,450)}
 function aiMove(){ // 电脑：只看这一年，挑自己多、你少的那步
   let best=null,bs=-1e9;
@@ -131,7 +131,8 @@ function draw(){
   for(const k in g.cells){const c=g.cells[k];const [a,b]=px(...xy(k));
     cx.fillStyle=L[k]?COL[c.who][0]:COL[c.who][1];cx.beginPath();cx.arc(a,b,r,0,7);cx.fill();
     if(L[k]){cx.fillStyle='#fff';cx.font=`${Math.floor(C/3.4)}px sans-serif`;cx.fillText(L[k],a,b+C/10)}
-    if(c.dark>=1&&c.parent!==null){cx.strokeStyle='#c82828';cx.lineWidth=3;cx.beginPath();cx.arc(a,b,r+4,0,7);cx.stroke()}
+    if(c.dark>=1&&c.parent!==null&&g.year<YEARS){cx.strokeStyle='#c82828';cx.lineWidth=3;cx.beginPath();cx.arc(a,b,r+4,0,7);cx.stroke()}
+    if(k===g.last){cx.strokeStyle='#2a5fb8';cx.lineWidth=2;cx.setLineDash([4,3]);cx.beginPath();cx.arc(a,b,r+7,0,7);cx.stroke();cx.setLineDash([])}
     if(k===sel){cx.strokeStyle='#333';cx.lineWidth=2;cx.beginPath();cx.arc(a,b,r+7,0,7);cx.stroke()}}
   const top=document.getElementById('top'),sub=document.getElementById('sub');
   if(g.year>=YEARS){const [a,b]=g.score;top.textContent=`十二年完了。绿 ${a} : ${b} 橙，`+(a>b?'绿赢':a<b?'橙赢':'平');sub.textContent=''}
