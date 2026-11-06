@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>抢光</title>
+<style>
+body{margin:0;background:#f6f2e6;font-family:-apple-system,"PingFang SC","Noto Sans SC",sans-serif;color:#3c3c3c;display:flex;flex-direction:column;align-items:center}
+#top{margin:10px 0 4px;font-size:17px;text-align:center;min-height:24px}
+#sub{font-size:14px;color:#777;text-align:center;min-height:20px}
+canvas{touch-action:manipulation;max-width:100vw}
+#bar{display:flex;gap:10px;margin:6px 0 4px;flex-wrap:wrap;justify-content:center}
+button{font-size:15px;padding:6px 12px;border:1px solid #bbb;border-radius:6px;background:#fff}
+#log{font-size:14px;color:#a33;min-height:20px;text-align:center;margin:2px 8px}
+#help{font-size:13px;color:#777;max-width:520px;margin:6px 14px 20px;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div id="sub"></div>
+<canvas id="c"></canvas>
+<div id="log"></div>
+<div id="bar">
+  <button id="new2">两个人下</button>
+  <button id="newai">跟电脑下（你是绿）</button>
+  <button id="undo">悔一步</button>
+</div>
+<div id="help">
+两棵树抢十二年的太阳。轮到你时，点自己的一格，再点它旁边亮起来的空格（上、左上、右上、左、右）长一格。每年两人各长一格，谁先手每年轮换。<br>
+年底结账：每格往太阳那边看，一路没东西挡得 2 份光，挡一格得 1 份，挡两格以上没有。太阳只提前一年告诉你从哪边来。<br>
+贴地的格子是根，每颗根撑 2 行高，长过了，最高那一枝从超出的地方整枝倒掉（虚线是各自能长到的高度）。<br>
+一枝连同它上面的整枝连着两年一份光没有，就枯掉。暗过一年的格子套红圈。
+</div>
+<script>
+const W=9,H=9,YEARS=12,FALL=2;
+const DIRS={'上':[0,1],'左上':[-1,1],'右上':[1,1],'左':[-1,0],'右':[1,0]};
+const NAMES=['绿','橙'];
+const COL=[['#3c8c46','#aacdaa'],['#c86e28','#ebc8a5']];
+const SUNN={'-1':'左上','0':'正上','1':'右上'};
+let g,hist=[],sel=null,ai=false,msg='';
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function key(x,y){return x+','+y}
+function xy(k){return k.split(',').map(Number)}
+function newGame(withAi){
+  let s=[];for(let i=0;i<4;i++)s.push(-1,0,1);
+  g={cells:{},turn:0,year:0,score:[0,0],suns:shuffle(s)};
+  g.cells[key(2,0)]={who:0,parent:null,dark:0};
+  g.cells[key(6,0)]={who:1,parent:null,dark:0};
+  hist=[];sel=null;ai=withAi;msg='';draw();
+}
+function sun(ahead){const y=g.year+(ahead||0);return y<YEARS?g.suns[y]:null}
+function whose(){return (g.turn%2+g.year)%2}
+function light(G){
+  G=G||g;const dx=G.year<YEARS?G.suns[G.year]:0;const L={};
+  for(const k in G.cells){const [x,y]=xy(k);let n=0;
+    for(let t=1;;t++){const nx=x+dx*t,ny=y+t;if(nx<0||nx>=W||ny>=H)break;if(G.cells[key(nx,ny)])n++}
+    L[k]=[2,1,0][Math.min(n,2)]}
+  return L}
+function children(G){const ch={};for(const k in G.cells)ch[k]=[];
+  for(const k in G.cells){const p=G.cells[k].parent;if(p&&ch[p])ch[p].push(k)}return ch}
+function roots(G,w){let n=0;for(const k in G.cells)if(G.cells[k].who===w&&xy(k)[1]===0)n++;return n}
+function subtree(G,k,ch){const out=[],st=[k];while(st.length){const q=st.pop();out.push(q);st.push(...(ch[q]||[]))}return out}
+function endYear(G,notes){
+  const L=light(G);
+  for(const k in L)G.score[G.cells[k].who]+=L[k];
+  let ch=children(G);const sub={};
+  const tot=k=>{if(k in sub)return sub[k];let s=L[k];for(const c of ch[k])s+=tot(c);return sub[k]=s};
+  for(const k in G.cells)tot(k);
+  for(const k in G.cells){const c=G.cells[k];c.dark=sub[k]===0?c.dark+1:0}
+  const dead=new Set();
+  for(const k in G.cells){const c=G.cells[k];if(c.dark>=2&&c.parent!==null)for(const q of subtree(G,k,ch))dead.add(q)}
+  if(dead.size){const by=[0,0];for(const k of dead)by[G.cells[k].who]++;
+    for(const w of [0,1])if(by[w])notes.push(`${NAMES[w]}枯了 ${by[w]} 格`);
+    for(const k of dead)delete G.cells[k]}
+  for(const w of [0,1]){
+    while(true){const lim=FALL*roots(G,w);let top=null;
+      for(const k in G.cells){if(G.cells[k].who!==w)continue;const y=xy(k)[1];if(!top||y>top[0]||(y===top[0]&&k>top[1]))top=[y,k]}
+      if(!top||top[0]<=lim)break;
+      let k=top[1];while(true){const p=G.cells[k].parent;if(p===null||xy(p)[1]<=lim)break;k=p}
+      ch=children(G);const gone=subtree(G,k,ch);for(const q of gone)delete G.cells[q];
+      notes.push(`${NAMES[w]}倒了 ${gone.length} 格`)}}
+  G.year++;
+}
+function targets(k){const [x,y]=xy(k),out=[];
+  for(const d in DIRS){const nx=x+DIRS[d][0],ny=y+DIRS[d][1];if(nx>=0&&nx<W&&ny>=0&&ny<H&&!g.cells[key(nx,ny)])out.push(key(nx,ny))}return out}
+function grow(from,to,G){G=G||g;const w=(G.turn%2+G.year)%2;G.cells[to]={who:w,parent:from,dark:0};G.turn++;
+  const notes=[];if(G.turn%2===0)endYear(G,notes);return notes}
+function clone(G){return JSON.parse(JSON.stringify(G))}
+function play(from,to){hist.push(clone(g));const y0=g.year;const notes=grow(from,to);
+  msg=notes.length?`第 ${y0} 年底：`+notes.join('，'):'';sel=null;draw();
+  if(ai&&g.year<YEARS&&whose()===1)setTimeout(aiMove,450)}
+function aiMove(){ // 电脑：只看这一年，挑自己多、你少的那步
+  let best=null,bs=-1e9;
+  for(const k in g.cells){if(g.cells[k].who!==1)continue;
+    for(const t of targets(k)){const G=clone(g);G.cells[t]={who:1,parent:k,dark:0};const L=light(G);let s=0;
+      for(const q in L)s+=(G.cells[q].who===1?1:-1)*L[q];
+      const [tx,ty]=xy(t);if(ty>FALL*roots(G,1))s-=6;if(ty===0)s+=0.5;
+      s+=Math.random()*0.9;if(s>bs){bs=s;best=[k,t]}}}
+  if(best)play(best[0],best[1])}
+
+const cv=document.getElementById('c'),cx=cv.getContext('2d');
+let C,X0,Y0;
+function layout(){const w=Math.min(window.innerWidth,560);C=Math.floor((w-50)/W);X0=34;Y0=50;
+  const dpr=window.devicePixelRatio||1;cv.width=(X0+C*W+16)*dpr;cv.height=(Y0+C*H+30)*dpr;
+  cv.style.width=(X0+C*W+16)+'px';cv.style.height=(Y0+C*H+30)+'px';cx.setTransform(dpr,0,0,dpr,0,0)}
+function px(x,y){return [X0+x*C+C/2,Y0+(H-1-y)*C+C/2]}
+function draw(){
+  layout();const L=light();
+  cx.fillStyle='#f6f2e6';cx.fillRect(0,0,cv.width,cv.height);
+  cx.strokeStyle='#ddd6c8';cx.lineWidth=1;
+  for(let x=0;x<W;x++)for(let y=0;y<H;y++)cx.strokeRect(X0+x*C,Y0+y*C,C,C);
+  cx.fillStyle='#8c6e50';cx.fillRect(X0,Y0+C*H,C*W,6);
+  cx.fillStyle='#999';cx.font='12px sans-serif';cx.textAlign='center';
+  for(let x=0;x<W;x++)cx.fillText(x,X0+x*C+C/2,Y0+C*H+20);
+  for(let y=0;y<H;y++)cx.fillText(y,16,Y0+(H-1-y)*C+C/2+4);
+  // 太阳
+  if(g.year<YEARS){const s=sun();const sx={'-1':X0+6,'0':X0+C*W/2,'1':X0+C*W-6}[s];
+    cx.fillStyle='#f0be28';cx.beginPath();cx.arc(sx,22,13,0,7);cx.fill();
+    cx.strokeStyle='rgba(220,160,20,.6)';cx.lineWidth=2;const ex=sx-s*24,ey=22+(s?20:26);
+    cx.beginPath();cx.moveTo(sx-s*14,22+(s?9:14));cx.lineTo(ex,ey);cx.stroke()}
+  // 能长到的高度
+  for(const w of [0,1]){const lim=FALL*roots(g,w);if(lim<H-1){const yy=Y0+(H-1-lim)*C-1+(w?3:0);
+    cx.strokeStyle=COL[w][0];cx.setLineDash([5,5]);cx.lineWidth=2;cx.beginPath();cx.moveTo(X0,yy);cx.lineTo(X0+C*W,yy);cx.stroke();cx.setLineDash([])}}
+  // 枝
+  for(const k in g.cells){const c=g.cells[k];if(!c.parent)continue;const a=px(...xy(k)),b=px(...xy(c.parent));
+    cx.strokeStyle=COL[c.who][0];cx.lineWidth=Math.max(3,C/10);cx.beginPath();cx.moveTo(...a);cx.lineTo(...b);cx.stroke()}
+  const tg=sel?targets(sel):[];
+  for(const t of tg){const [a,b]=px(...xy(t));cx.fillStyle='rgba(0,0,0,.08)';cx.beginPath();cx.arc(a,b,C*0.36,0,7);cx.fill()}
+  const r=C*0.36;
+  for(const k in g.cells){const c=g.cells[k];const [a,b]=px(...xy(k));
+    cx.fillStyle=L[k]?COL[c.who][0]:COL[c.who][1];cx.beginPath();cx.arc(a,b,r,0,7);cx.fill();
+    if(L[k]){cx.fillStyle='#fff';cx.font=`${Math.floor(C/3.4)}px sans-serif`;cx.fillText(L[k],a,b+C/10)}
+    if(c.dark>=1&&c.parent!==null){cx.strokeStyle='#c82828';cx.lineWidth=3;cx.beginPath();cx.arc(a,b,r+4,0,7);cx.stroke()}
+    if(k===sel){cx.strokeStyle='#333';cx.lineWidth=2;cx.beginPath();cx.arc(a,b,r+7,0,7);cx.stroke()}}
+  const top=document.getElementById('top'),sub=document.getElementById('sub');
+  if(g.year>=YEARS){const [a,b]=g.score;top.textContent=`十二年完了。绿 ${a} : ${b} 橙，`+(a>b?'绿赢':a<b?'橙赢':'平');sub.textContent=''}
+  else{const nx=sun(1);top.innerHTML=`第 ${g.year+1} 年 / ${YEARS}　绿 ${g.score[0]} : ${g.score[1]} 橙　<b style="color:${COL[whose()][0]}">该${NAMES[whose()]}长</b>`;
+    sub.textContent=`今年太阳从${SUNN[sun()]}照，明年`+(nx===null?'没有了':`从${SUNN[nx]}照`)+(g.turn%2?'（这年第二步）':'（这年第一步）')}
+  document.getElementById('log').textContent=msg;
+}
+cv.addEventListener('click',e=>{
+  if(g.year>=YEARS)return;if(ai&&whose()===1)return;
+  const rc=cv.getBoundingClientRect();const x=Math.floor((e.clientX-rc.left-X0)/C),y=H-1-Math.floor((e.clientY-rc.top-Y0)/C);
+  if(x<0||x>=W||y<0||y>=H)return;const k=key(x,y);
+  if(sel&&targets(sel).includes(k)){play(sel,k);return}
+  const c=g.cells[k];sel=(c&&c.who===whose()&&targets(k).length)?k:null;draw()});
+document.getElementById('new2').onclick=()=>newGame(false);
+document.getElementById('newai').onclick=()=>newGame(true);
+document.getElementById('undo').onclick=()=>{if(!hist.length)return;
+  g=hist.pop();if(ai&&whose()===1&&hist.length)g=hist.pop();sel=null;msg='';draw()};
+window.addEventListener('resize',draw);
+newGame(false);
+</script>
+</body>
+</html>
